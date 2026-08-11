@@ -64,3 +64,5 @@ device = get_default_device()ccx                                                
 print(device)
 train_dl = DeviceDataLoader(train_dl, device)
 test_dl = DeviceDataLoader(test_dl, device)
+
+
