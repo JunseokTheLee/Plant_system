@@ -1,37 +1,74 @@
+# sys gives us access to command-line arguments and lets us exit the program cleanly.
 import sys
+# QtWidgets contains the visible UI building blocks: windows, buttons, labels,
+# layouts, dialogs, scroll areas, and so on.
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QPushButton, QLabel, QFrame,
     QGridLayout, QVBoxLayout, QHBoxLayout, QScrollArea,
     QFileDialog, QInputDialog, QMessageBox
 )
+# QtGui contains drawing/image/text tools.
+# QPixmap      -> loads and stores images
+# QPainter     -> draws custom graphics onto widgets
+# QColor/QPen  -> control drawing colors and outlines
+# QFont        -> controls fonts
+# QFontMetrics -> measures text so we can shorten text that is too long
 from PyQt6.QtGui import QPixmap, QPainter, QColor, QPen, QFont, QFontMetrics
+# Qt contains many useful constants/enums (mouse buttons, alignments, etc.).
+# QRect represents a rectangular area, used below to decide where an image is drawn.
 from PyQt6.QtCore import Qt, QRect
 
 
+# Size of every plant card, in pixels.
 CARD_W, CARD_H = 265, 165
+
+# Number of plant cards shown in each row of the grid.
 CARD_COLUMNS = 3
 
 
+# -----------------------------------------------------------------------------
+# PlantCard
+# -----------------------------------------------------------------------------
+# A PlantCard is one clickable rectangle in the plant catalog.
+# It inherits from QFrame, which is a basic Qt widget that can have a border,
+# background, and custom painting.
 class PlantCard(QFrame):
     def __init__(self, plant, on_select):
+        # Run QFrame's own constructor first so the widget is initialized properly.
         super().__init__()
 
+        # Store the plant dictionary represented by this card.
         self.plant = plant
+
+        # Store a callback function. The card calls this when the user clicks it.
         self.on_select = on_select
+
+        # Tracks whether this card is currently selected.
         self.active = False
 
+        # Force every card to have the same dimensions.
         self.setFixedSize(CARD_W, CARD_H)
+
+        # Show the hand-shaped mouse cursor when hovering over the card.
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        # Give the card its initial, unselected appearance.
         self._apply_style()
 
     def set_active(self, active):
+        # Turn the selected appearance on or off.
+        # If nothing has changed, there is no reason to redraw the card.
         if self.active == active:
             return
         self.active = active
         self._apply_style()
+
+        # Ask Qt to repaint this widget.
         self.update()
 
     def _apply_style(self):
+        # Qt style sheets work similarly to CSS.
+        # The selected card gets a thicker green border.
         if self.active:
             self.setStyleSheet("""
                 QFrame {
@@ -50,57 +87,92 @@ class PlantCard(QFrame):
             """)
 
     def mousePressEvent(self, event):
+        # Qt automatically calls this method whenever this widget is clicked.
+        # Only respond to the left mouse button.
         if event.button() == Qt.MouseButton.LeftButton:
+            # Tell the main application which plant was clicked.
             self.on_select(self.plant)
 
     def paintEvent(self, event):
+        # Qt calls paintEvent whenever this widget needs to be drawn.
+        # Calling the parent version first draws the normal frame/background/style.
         super().paintEvent(event)
 
+        # QPainter lets us manually draw images, shapes, and text on this card.
         painter = QPainter(self)
+
+        # Antialiasing smooths edges so shapes/text look less jagged.
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
+        # Work out the rectangle in which the plant image will be drawn.
         w = self.width()
         margin = 12
         image_height = 70
-        image_rect = QRect(margin, margin, w - margin * 2, image_height)
+        image_rect = QRect(
+            margin,                 # x position
+            margin,                 # y position
+            w - margin * 2,         # width, leaving a margin on both sides
+            image_height            # height
+        )
 
+        # dict.get() safely returns None if "image_path" does not exist.
         image_path = self.plant.get("image_path")
         if image_path:
+            # Load the image file into a QPixmap object.
             pixmap = QPixmap(image_path)
+            # isNull() is True when Qt failed to load the image.
             if not pixmap.isNull():
+                # Resize the image to fill the image area.
+                # KeepAspectRatioByExpanding avoids stretching the image;
+                # SmoothTransformation gives better-looking resizing.
                 pixmap = pixmap.scaled(
                     image_rect.size(),
                     Qt.AspectRatioMode.KeepAspectRatioByExpanding,
                     Qt.TransformationMode.SmoothTransformation
                 )
+                # Draw the loaded/scaled image into the card.
                 painter.drawPixmap(image_rect, pixmap)
         else:
-             
-             placeholder = QFont("Arial", 20)
-             painter.setFont(placeholder)
-             painter.setPen(QPen(QColor("#9e9e9e")))
-             painter.drawText(image_rect, Qt.AlignmentFlag.AlignCenter, "placeholder")
+            placeholder = QFont("Arial", 20)
+            painter.setFont(placeholder)
+            painter.setPen(QPen(QColor("#9e9e9e")))
+            painter.drawText(image_rect, Qt.AlignmentFlag.AlignCenter, "+")
 
+        # Draw the plant name underneath the image.
         name_font = QFont("Arial", 14)
         painter.setFont(name_font)
         painter.setPen(QPen(QColor("#111111")))
+        # If the plant name is too long to fit, elidedText() shortens it and
+        # adds an ellipsis (...), rather than letting it spill outside the card.
         name = QFontMetrics(name_font).elidedText(
             self.plant["name"], Qt.TextElideMode.ElideRight, w - 2 * margin
         )
         painter.drawText(margin, margin + image_height + 22, name)
 
+        # Draw the most recent status in smaller gray text.
         painter.setFont(QFont("Arial", 10))
         painter.setPen(QPen(QColor("#6b6966")))
         painter.drawText(margin, margin + image_height + 40, f"Last status: {self.plant['status']}")
 
 
+# -----------------------------------------------------------------------------
+# DetailPanel
+# -----------------------------------------------------------------------------
+# This is the large panel below the catalog. It shows the currently selected
+# plant's name, status, description, image, filename, and Scan button.
 class DetailPanel(QFrame):
     def __init__(self, on_scan):
         super().__init__()
 
+        # on_scan is a callback supplied by PlantApp. It will be run when the
+        # user clicks the Scan button.
+
         self.on_scan = on_scan
+
+        # No plant is selected when the panel is first created.
         self.plant = None
 
+        # Keep the detail panel at a constant height.
         self.setFixedHeight(280)
 
         self.setStyleSheet("""
@@ -111,13 +183,16 @@ class DetailPanel(QFrame):
             }
         """)
 
+        # Split the whole window horizontally into sidebar + main content.
         main_layout = QHBoxLayout(self)
         main_layout.setContentsMargins(25, 25, 25, 20)
         main_layout.setSpacing(30)
 
+        # A vertical layout for title, status, and description.
         text_layout = QVBoxLayout()
         text_layout.setSpacing(8)
 
+        # QLabel displays text (and can also display images).
         self.title = QLabel("")
         self.title.setFont(QFont("Arial", 24))
         self.title.setStyleSheet("border: none;")
@@ -129,14 +204,17 @@ class DetailPanel(QFrame):
         self.desc = QLabel("")
         self.desc.setFont(QFont("Arial", 14))
         self.desc.setStyleSheet("border: none;")
+        # Allow long descriptions to continue on a new line automatically.
         self.desc.setWordWrap(True)
 
         text_layout.addWidget(self.title)
         text_layout.addWidget(self.status)
         text_layout.addSpacing(12)
         text_layout.addWidget(self.desc)
+        # Stretch consumes unused vertical space and pushes the text upward.
         text_layout.addStretch()
 
+        # Right side: preview image, filename, then Scan button.
         right_layout = QVBoxLayout()
         right_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
@@ -144,6 +222,7 @@ class DetailPanel(QFrame):
         self.image_box.setFixedSize(165, 165)
         self.image_box.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.image_box.setFont(QFont("Arial", 90))
+        # Scale any displayed pixmap to fit inside the QLabel.
         self.image_box.setScaledContents(True)
 
         self.filename = QLabel("")
@@ -162,6 +241,9 @@ class DetailPanel(QFrame):
             }
         """)
         self.scan_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        # Qt uses signals and slots for events.
+        # clicked is the signal emitted by the button; _scan_clicked is the
+        # function that should run when that signal occurs.
         self.scan_btn.clicked.connect(self._scan_clicked)
 
         right_layout.addWidget(self.image_box)
@@ -169,27 +251,35 @@ class DetailPanel(QFrame):
         right_layout.addWidget(self.scan_btn, alignment=Qt.AlignmentFlag.AlignCenter)
 
         main_layout.addLayout(text_layout)
+        # Put flexible space between the text area and the image area.
         main_layout.addStretch()
         main_layout.addLayout(right_layout)
 
+        # Initialize the panel in its "no plant selected" state.
         self.load(None)
 
     def _scan_clicked(self):
+        # Internal handler for the Scan button.
+        # Only scan if a real plant is selected.
         if self.plant is not None:
             self.on_scan(self.plant)
 
     def load(self, plant):
+        # Update all widgets in this panel to show a particular plant.
         self.plant = plant
 
+        # Special state used when nothing has been selected yet.
         if plant is None:
             self.title.setText("No plant selected")
             self.status.setText("")
             self.desc.setText("Add a plant or pick one from the catalog above.")
             self._set_image(None)
             self.filename.setText("")
+            # The user cannot scan when there is no selected plant.
             self.scan_btn.setEnabled(False)
             return
 
+        # A real plant is selected, so scanning is now allowed.
         self.scan_btn.setEnabled(True)
         self.title.setText(plant["name"])
         self.status.setText(f"Last Status: {plant['status']}")
@@ -198,7 +288,12 @@ class DetailPanel(QFrame):
         self.filename.setText(plant.get("image_path") or "No image set")
 
     def _set_image(self, image_path):
+        # Display an image if one exists; otherwise display a '+' placeholder.
+        # This is a conditional expression:
+        # load QPixmap(image_path) when a path exists; otherwise use None.
         pixmap = QPixmap(image_path) if image_path else None
+        # The first condition checks that pixmap is not None.
+        # The second checks that Qt successfully loaded the image.
         if pixmap and not pixmap.isNull():
             self.image_box.setPixmap(pixmap)
             self.image_box.setText("")
@@ -220,14 +315,28 @@ class DetailPanel(QFrame):
             """)
 
 
+# -----------------------------------------------------------------------------
+# PlantApp
+# -----------------------------------------------------------------------------
+# This is the main application window. It owns the plant data, sidebar,
+# scrollable card grid, detail panel, and the functions that connect them.
 class PlantApp(QWidget):
     def __init__(self):
+        # Initialize QWidget, the parent class of our main window.
         super().__init__()
 
+        # Text shown in the operating system's window title bar.
         self.setWindowTitle("Plant UI")
+
+        # Set the starting window size. Unlike setFixedSize(), the user can
+        # still resize the window afterwards.
         self.resize(1280, 832)
         self.setStyleSheet("background-color: white;")
 
+        # The app currently stores plant information in a simple Python list.
+        # Each plant is a dictionary with four fields.
+        # This data disappears when the program closes because it is not yet
+        # saved to a file or database.
         self.plants = [
             {
                 "name": "Sample Plant",
@@ -242,14 +351,18 @@ class PlantApp(QWidget):
                 "image_path": "plant.jpeg",
             },
         ]
+        # Start a fresh list of visible card widgets.
         self.cards = []
 
         main_layout = QHBoxLayout(self)
+        # Remove the default gap around the outer edge of the window.
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
         # ── Sidebar ──────────────────────────────────────────────────────
+        # QFrame is used here as the sidebar container.
         sidebar = QFrame()
+        # The sidebar always stays 290 pixels wide.
         sidebar.setFixedWidth(290)
         sidebar.setStyleSheet("""
             QFrame {
@@ -258,6 +371,7 @@ class PlantApp(QWidget):
             }
         """)
 
+        # Arrange the sidebar buttons from top to bottom.
         sidebar_layout = QVBoxLayout(sidebar)
         sidebar_layout.setContentsMargins(20, 82, 20, 43)
         sidebar_layout.setSpacing(0)
@@ -272,9 +386,11 @@ class PlantApp(QWidget):
             }
         """)
         add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        # Run self.add_plant when the button is clicked.
         add_btn.clicked.connect(self.add_plant)
 
         sidebar_layout.addWidget(add_btn, alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignCenter)
+        # Flexible empty space pushes Admin and Log Out toward the bottom.
         sidebar_layout.addStretch()
 
         admin_btn = QPushButton("Admin")
@@ -288,6 +404,7 @@ class PlantApp(QWidget):
             }
         """)
         admin_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        # The Admin button currently only opens an informational message box.
         admin_btn.clicked.connect(self.show_admin_placeholder)
 
         logout_btn = QPushButton("Log Out")
@@ -300,6 +417,7 @@ class PlantApp(QWidget):
             }
         """)
         logout_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        # QWidget.close() closes this main window, effectively ending the app.
         logout_btn.clicked.connect(self.close)
 
         sidebar_layout.addWidget(admin_btn, alignment=Qt.AlignmentFlag.AlignCenter)
@@ -307,82 +425,139 @@ class PlantApp(QWidget):
         sidebar_layout.addWidget(logout_btn, alignment=Qt.AlignmentFlag.AlignCenter)
 
         # ── Content ──────────────────────────────────────────────────────
+        # Container for everything to the right of the sidebar.
         content = QFrame()
         content.setStyleSheet("background-color: white; border: none;")
 
+        # Stack the scrollable plant grid above the detail panel.
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(48, 40, 18, 0)
         content_layout.setSpacing(20)
 
+        # QScrollArea lets the catalog become vertically scrollable when
+        # there are more cards than can fit on screen.
         scroll = QScrollArea()
+        # Allow the widget inside the scroll area to resize with the window.
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        # We only want vertical scrolling, never a horizontal scrollbar.
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setStyleSheet("background-color: white; border: none;")
 
+        # A scroll area can contain one widget, so grid_holder acts as that
+        # one widget, while its QGridLayout contains all the cards.
         grid_holder = QWidget()
         grid_holder.setStyleSheet("background-color: white;")
+        # QGridLayout arranges cards in rows and columns.
         self.grid = QGridLayout(grid_holder)
         self.grid.setHorizontalSpacing(55)
         self.grid.setVerticalSpacing(30)
         self.grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
 
+        # Put the grid container inside the scroll area.
         scroll.setWidget(grid_holder)
+        # stretch=1 means the scroll area receives most available extra height.
         content_layout.addWidget(scroll, stretch=1)
 
+        # Give the DetailPanel our scan_plant method as its callback.
+        # The panel does not need to know how scanning works; it simply calls
+        # this function when its Scan button is pressed.
         self.detail_panel = DetailPanel(on_scan=self.scan_plant)
         content_layout.addWidget(self.detail_panel)
 
+        # Finally place both major sections into the main window layout.
         main_layout.addWidget(sidebar)
         main_layout.addWidget(content)
 
+        # Create cards for the plants currently in self.plants.
         self._rebuild_grid()
+
+        # Automatically select the first sample plant when the program starts.
         self.select_plant(self.plants[0])
 
     def _rebuild_grid(self):
+        # Recreate every card in the catalog.
+        # This is called after a plant is added or its data changes.
+        # First remove all existing widgets from the grid.
+        # count() tells us how many items are still in the layout.
         while self.grid.count():
+            # Remove the first layout item each time through the loop.
             item = self.grid.takeAt(0)
             widget = item.widget()
             if widget:
+                # Removing its parent makes Qt remove the old widget from the UI.
                 widget.setParent(None)
 
         self.cards = []
+        # enumerate() gives both the index (i) and plant dictionary.
         for i, plant in enumerate(self.plants):
+            # Each card receives this plant plus self.select_plant as the
+            # callback to run when the card is clicked.
             card = PlantCard(plant, self.select_plant)
             self.cards.append(card)
+            # Convert the one-dimensional index i into grid coordinates:
+            #   i // CARD_COLUMNS -> row (integer division)
+            #   i %  CARD_COLUMNS -> column (remainder)
+            # For 3 columns: i=0 -> (0,0), i=1 -> (0,1), i=3 -> (1,0).
             self.grid.addWidget(card, i // CARD_COLUMNS, i % CARD_COLUMNS)
 
     def select_plant(self, plant):
+        # Called when a PlantCard is clicked or when the program wants to
+        # select a plant automatically.
+        # Mark exactly one card as active.
+        # "is" checks whether both variables refer to the same dictionary object.
         for card in self.cards:
             card.set_active(card.plant is plant)
+        # Show the same plant in the detail panel below.
         self.detail_panel.load(plant)
 
     def add_plant(self):
+        # Ask the user for a plant name and image, then add a new dictionary
+        # to self.plants.
+        # getText() returns two values:
+        #   name -> what the user typed
+        #   ok   -> True if they pressed OK, False if they cancelled
         name, ok = QInputDialog.getText(self, "Add Plant", "Plant name:")
+        # strip() removes surrounding whitespace. Stop if the dialog was
+        # cancelled or if the user entered only blank spaces.
         if not ok or not name.strip():
             return
 
+        # Open the operating system's file picker.
+        # getOpenFileName() returns (selected_path, selected_filter).
+        # We only need the path, so '_' deliberately ignores the second value.
         image_path, _ = QFileDialog.getOpenFileName(
             self, "Choose a photo for this plant", "", "Images (*.png *.jpg *.jpeg *.bmp)"
         )
 
+        # Create the dictionary used throughout the rest of the program.
         plant = {
             "name": name.strip(),
             "status": "Unknown",
             "description": "No scan performed yet.",
+            # "image_path or None" stores None if image_path is an empty string.
             "image_path": image_path or None,
         }
+        # Add the new dictionary to the end of the plant list.
         self.plants.append(plant)
+        # Recreate the cards so the new image/status appears, then reselect
+        # this plant because rebuilding the grid created new card widgets.
         self._rebuild_grid()
         self.select_plant(plant)
 
     def scan_plant(self, plant):
+        # This is currently a placeholder for future disease-detection logic.
+        # For now, "scanning" simply lets the user choose a new leaf photo and
+        # changes the plant's status to Pending review.
         image_path, _ = QFileDialog.getOpenFileName(
             self, "Choose a leaf photo to scan", "", "Images (*.png *.jpg *.jpeg *.bmp)"
         )
+        # The file dialog returns an empty string if the user cancels.
         if not image_path:
             return
 
+        # Because plant is a mutable dictionary, changing it here also changes
+        # the dictionary stored inside self.plants.
         plant["image_path"] = image_path
         plant["status"] = "Pending review"
         plant["description"] = "Photo captured. Automated disease detection isn't wired up yet."
@@ -390,11 +565,25 @@ class PlantApp(QWidget):
         self.select_plant(plant)
 
     def show_admin_placeholder(self):
+        # QMessageBox.information() opens a small pop-up with an OK button.
         QMessageBox.information(self, "Admin", "Admin tools aren't implemented yet.")
 
 
+# -----------------------------------------------------------------------------
+# Program entry point
+# -----------------------------------------------------------------------------
+# Python sets __name__ to "__main__" when this file is run directly.
+# This prevents the GUI from automatically starting if this file is imported
+# by another Python file.
 if __name__ == "__main__":
+    # Every Qt GUI program needs exactly one QApplication object.
+    # sys.argv lets Qt read any command-line arguments supplied to the program.
     app = QApplication(sys.argv)
+    # Construct our main window and all of its child widgets.
     window = PlantApp()
+    # Widgets are hidden by default; show() makes the main window visible.
     window.show()
+    # app.exec() starts Qt's event loop, which waits for clicks, keyboard input,
+    # repaint requests, etc. It ends when the application closes.
+    # sys.exit() then returns Qt's exit code to the operating system.
     sys.exit(app.exec())
