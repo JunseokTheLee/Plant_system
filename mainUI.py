@@ -1,4 +1,5 @@
 import sys
+import requests
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QPushButton, QLabel, QFrame,
     QGridLayout, QVBoxLayout, QHBoxLayout, QScrollArea,
@@ -6,6 +7,25 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QPixmap, QPainter, QColor, QPen, QFont, QFontMetrics
 from PyQt6.QtCore import Qt, QRect
+
+from model.infer import predict
+import db
+
+
+def load_pixmap(image_path):
+    """Loads a QPixmap from a local file path or a Supabase Storage URL."""
+    if not image_path:
+        return QPixmap()
+    if image_path.startswith("http://") or image_path.startswith("https://"):
+        try:
+            resp = requests.get(image_path, timeout=10)
+            resp.raise_for_status()
+            pixmap = QPixmap()
+            pixmap.loadFromData(resp.content)
+            return pixmap
+        except Exception:
+            return QPixmap()
+    return QPixmap(image_path)
 
 
 CARD_W, CARD_H = 265, 165
@@ -66,7 +86,7 @@ class PlantCard(QFrame):
 
         image_path = self.plant.get("image_path")
         if image_path:
-            pixmap = QPixmap(image_path)
+            pixmap = load_pixmap(image_path)
             if not pixmap.isNull():
                 pixmap = pixmap.scaled(
                     image_rect.size(),
@@ -198,7 +218,7 @@ class DetailPanel(QFrame):
         self.filename.setText(plant.get("image_path") or "No image set")
 
     def _set_image(self, image_path):
-        pixmap = QPixmap(image_path) if image_path else None
+        pixmap = load_pixmap(image_path) if image_path else None
         if pixmap and not pixmap.isNull():
             self.image_box.setPixmap(pixmap)
             self.image_box.setText("")
@@ -228,20 +248,7 @@ class PlantApp(QWidget):
         self.resize(1280, 832)
         self.setStyleSheet("background-color: white;")
 
-        self.plants = [
-            {
-                "name": "Sample Plant",
-                "status": "Healthy",
-                "description": "Click Scan to preview a leaf photo, or use Add/Edit Plant to add your own.",
-                "image_path": "plant.jpeg",
-            },
-            {
-                "name": "Sample Plant 2",
-                "status": "Healthy",
-                "description": "Click Scan to preview a leaf photo, or use Add/Edit Plant to add your own.",
-                "image_path": "plant.jpeg",
-            },
-        ]
+        self.plants = self._load_plants()
         self.cards = []
 
         main_layout = QHBoxLayout(self)
@@ -339,6 +346,41 @@ class PlantApp(QWidget):
         self._rebuild_grid()
         self.select_plant(self.plants[0])
 
+    def _load_plants(self):
+        sample = [
+            {
+                "name": "Sample Plant",
+                "status": "Healthy",
+                "description": "Click Scan to preview a leaf photo, or use Add/Edit Plant to add your own.",
+                "image_path": "plant.jpeg",
+            },
+            {
+                "name": "Sample Plant 2",
+                "status": "Healthy",
+                "description": "Click Scan to preview a leaf photo, or use Add/Edit Plant to add your own.",
+                "image_path": "plant.jpeg",
+            },
+        ]
+
+        try:
+            rows = db.fetch_plants()
+        except Exception as e:
+            print(f"[db] Could not reach Supabase, running with local-only data: {e}")
+            return sample
+
+        if rows:
+            return rows
+
+        # First run against an empty database: seed it with the sample plants.
+        seeded = []
+        for plant in sample:
+            try:
+                seeded.append(db.insert_plant(**plant))
+            except Exception as e:
+                print(f"[db] Could not seed sample plant: {e}")
+                seeded.append(plant)
+        return seeded
+
     def _rebuild_grid(self):
         while self.grid.count():
             item = self.grid.takeAt(0)
@@ -362,16 +404,30 @@ class PlantApp(QWidget):
         if not ok or not name.strip():
             return
 
-        image_path, _ = QFileDialog.getOpenFileName(
+        local_image_path, _ = QFileDialog.getOpenFileName(
             self, "Choose a photo for this plant", "", "Images (*.png *.jpg *.jpeg *.bmp)"
         )
+
+        image_url = local_image_path or None
+        if local_image_path:
+            try:
+                image_url = db.upload_image(local_image_path)
+            except Exception as e:
+                print(f"[db] Image upload failed, keeping local path: {e}")
+                image_url = local_image_path
 
         plant = {
             "name": name.strip(),
             "status": "Unknown",
             "description": "No scan performed yet.",
-            "image_path": image_path or None,
+            "image_path": image_url,
         }
+
+        try:
+            plant = db.insert_plant(**plant)
+        except Exception as e:
+            print(f"[db] Could not save plant to Supabase, keeping it local-only: {e}")
+
         self.plants.append(plant)
         self._rebuild_grid()
         self.select_plant(plant)
@@ -383,9 +439,36 @@ class PlantApp(QWidget):
         if not image_path:
             return
 
-        plant["image_path"] = image_path
-        plant["status"] = "Pending review"
-        plant["description"] = "Photo captured. Automated disease detection isn't wired up yet."
+        try:
+            label, confidence = predict(image_path)
+        except Exception as e:
+            QMessageBox.warning(self, "Scan failed", f"Could not run detection:\n{e}")
+            return
+
+        crop, condition = label.split("___", 1)
+        condition = condition.replace("_", " ")
+
+        image_url = image_path
+        try:
+            image_url = db.upload_image(image_path)
+        except Exception as e:
+            print(f"[db] Image upload failed, keeping local path: {e}")
+
+        plant["image_path"] = image_url
+        plant["status"] = condition
+        plant["description"] = f"Detected on {crop.replace('_', ' ')}: {condition} ({confidence:.0%} confidence)"
+
+        if plant.get("id"):
+            try:
+                db.update_plant(
+                    plant["id"],
+                    image_path=plant["image_path"],
+                    status=plant["status"],
+                    description=plant["description"],
+                )
+            except Exception as e:
+                print(f"[db] Could not save scan result to Supabase: {e}")
+
         self._rebuild_grid()
         self.select_plant(plant)
 
