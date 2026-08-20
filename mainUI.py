@@ -140,15 +140,15 @@ class DetailPanel(QFrame):
 
         self.title = QLabel("")
         self.title.setFont(QFont("Arial", 24))
-        self.title.setStyleSheet("border: none;")
+        self.title.setStyleSheet("border: none; color: #111111;")
 
         self.status = QLabel("")
         self.status.setFont(QFont("Arial", 20))
-        self.status.setStyleSheet("border: none;")
+        self.status.setStyleSheet("border: none; color: #111111;")
 
         self.desc = QLabel("")
         self.desc.setFont(QFont("Arial", 14))
-        self.desc.setStyleSheet("border: none;")
+        self.desc.setStyleSheet("border: none; color: #111111;")
         self.desc.setWordWrap(True)
 
         text_layout.addWidget(self.title)
@@ -169,7 +169,7 @@ class DetailPanel(QFrame):
         self.filename = QLabel("")
         self.filename.setFont(QFont("Arial", 12))
         self.filename.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.filename.setStyleSheet("border: none;")
+        self.filename.setStyleSheet("border: none; color: #111111;")
 
         self.scan_btn = QPushButton("Scan")
         self.scan_btn.setFixedSize(90, 33)
@@ -177,6 +177,7 @@ class DetailPanel(QFrame):
         self.scan_btn.setStyleSheet("""
             QPushButton {
                 background-color: #d9d9d9;
+                color: #111111;
                 border: none;
                 border-radius: 3px;
             }
@@ -275,6 +276,7 @@ class PlantApp(QWidget):
         add_btn.setStyleSheet("""
             QPushButton {
                 background-color: #d9d9d9;
+                color: #111111;
                 border: none;
             }
         """)
@@ -290,6 +292,7 @@ class PlantApp(QWidget):
         admin_btn.setStyleSheet("""
             QPushButton {
                 background-color: white;
+                color: #111111;
                 border: 2px solid #b5b5b5;
                 border-radius: 25px;
             }
@@ -303,6 +306,7 @@ class PlantApp(QWidget):
         logout_btn.setStyleSheet("""
             QPushButton {
                 background-color: #d9d9d9;
+                color: #111111;
                 border: none;
             }
         """)
