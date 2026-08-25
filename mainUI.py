@@ -165,7 +165,7 @@ class DetailPanel(QFrame):
         self.image_box.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.image_box.setFont(QFont("Arial", 90))
         self.image_box.setScaledContents(True)
-
+        self.desc.setStyleSheet("border: none; color: #111111;")
         self.filename = QLabel("")
         self.filename.setFont(QFont("Arial", 12))
         self.filename.setAlignment(Qt.AlignmentFlag.AlignCenter)
