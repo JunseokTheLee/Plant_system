@@ -13,7 +13,7 @@ import db
 
 
 def load_pixmap(image_path):
-    """Loads a QPixmap from a local file path or a Supabase Storage URL."""
+    
     if not image_path:
         return QPixmap()
     if image_path.startswith("http://") or image_path.startswith("https://"):
@@ -256,7 +256,7 @@ class PlantApp(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # ── Sidebar ──────────────────────────────────────────────────────
+        
         sidebar = QFrame()
         sidebar.setFixedWidth(290)
         sidebar.setStyleSheet("""
@@ -317,7 +317,7 @@ class PlantApp(QWidget):
         sidebar_layout.addSpacing(20)
         sidebar_layout.addWidget(logout_btn, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        # ── Content ──────────────────────────────────────────────────────
+        
         content = QFrame()
         content.setStyleSheet("background-color: white; border: none;")
 
@@ -375,7 +375,7 @@ class PlantApp(QWidget):
         if rows:
             return rows
 
-        # First run against an empty database: seed it with the sample plants.
+        
         seeded = []
         for plant in sample:
             try:
