@@ -10,6 +10,7 @@ create table if not exists plants (
 alter table plants add column if not exists status text not null default 'Unknown';
 alter table plants add column if not exists description text default '';
 alter table plants add column if not exists image_path text;
+alter table plants add column if not exists risk numeric not null default 0;
 
 alter table plants enable row level security;
 

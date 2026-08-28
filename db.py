@@ -31,12 +31,13 @@ def fetch_plants() -> list[dict]:
 
 
 def insert_plant(name: str, status: str = "Unknown", description: str = "",
-                  image_path: str | None = None) -> dict:
+                  image_path: str | None = None, risk: float = 0.0) -> dict:
     row = {
         "name": name,
         "status": status,
         "description": description,
         "image_path": image_path,
+        "risk": risk,
     }
     res = get_client().table("plants").insert(row).execute()
     return res.data[0]

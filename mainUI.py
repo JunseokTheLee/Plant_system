@@ -113,6 +113,13 @@ class PlantCard(QFrame):
         painter.setPen(QPen(QColor("#6b6966")))
         painter.drawText(margin, margin + image_height + 40, f"Last status: {self.plant['status']}")
 
+        risk = self.plant.get("risk") or 0
+        painter.setFont(QFont("Arial", 10))
+        painter.setPen(QPen(QColor("#c0392b") if risk >= 50 else QColor("#6b6966")))
+        risk_text = f"Risk: {risk:.0f}%"
+        risk_width = QFontMetrics(painter.font()).horizontalAdvance(risk_text)
+        painter.drawText(w - margin - risk_width, margin + image_height + 40, risk_text)
+
 
 class DetailPanel(QFrame):
     def __init__(self, on_scan):
@@ -325,6 +332,29 @@ class PlantApp(QWidget):
         content_layout.setContentsMargins(48, 40, 18, 0)
         content_layout.setSpacing(20)
 
+        toolbar = QHBoxLayout()
+        toolbar.addStretch()
+
+        self.sort_by_risk = False
+        self.sort_descending = True
+
+        self.sort_btn = QPushButton("Sort by Risk")
+        self.sort_btn.setFixedSize(160, 36)
+        self.sort_btn.setFont(QFont("Arial", 12))
+        self.sort_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #d9d9d9;
+                color: #111111;
+                border: none;
+                border-radius: 6px;
+            }
+        """)
+        self.sort_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.sort_btn.clicked.connect(self.toggle_sort_by_risk)
+        toolbar.addWidget(self.sort_btn)
+
+        content_layout.addLayout(toolbar)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -398,6 +428,32 @@ class PlantApp(QWidget):
             self.cards.append(card)
             self.grid.addWidget(card, i // CARD_COLUMNS, i % CARD_COLUMNS)
 
+    def toggle_sort_by_risk(self):
+        if self.sort_by_risk:
+            self.sort_descending = not self.sort_descending
+        else:
+            self.sort_by_risk = True
+            self.sort_descending = True
+
+        self._bubble_sort_by_risk(self.plants, descending=self.sort_descending)
+        self.sort_btn.setText(f"Risk {'▼' if self.sort_descending else '▲'}")
+        self._rebuild_grid()
+
+    @staticmethod
+    def _bubble_sort_by_risk(plants, descending=True):
+        n = len(plants)
+        for i in range(n - 1):
+            swapped = False
+            for j in range(n - 1 - i):
+                a = plants[j].get("risk") or 0
+                b = plants[j + 1].get("risk") or 0
+                should_swap = a < b if descending else a > b
+                if should_swap:
+                    plants[j], plants[j + 1] = plants[j + 1], plants[j]
+                    swapped = True
+            if not swapped:
+                break
+
     def select_plant(self, plant):
         for card in self.cards:
             card.set_active(card.plant is plant)
@@ -461,6 +517,7 @@ class PlantApp(QWidget):
         plant["image_path"] = image_url
         plant["status"] = condition
         plant["description"] = f"Detected on {crop.replace('_', ' ')}: {condition} ({confidence:.0%} confidence)"
+        plant["risk"] = 0.0 if condition.strip().lower() == "healthy" else round(confidence * 100, 1)
 
         if plant.get("id"):
             try:
@@ -469,6 +526,7 @@ class PlantApp(QWidget):
                     image_path=plant["image_path"],
                     status=plant["status"],
                     description=plant["description"],
+                    risk=plant["risk"],
                 )
             except Exception as e:
                 print(f"[db] Could not save scan result to Supabase: {e}")
